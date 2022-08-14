@@ -1,7 +1,4 @@
 use clap::Parser;
-use tokio::main;
-use serde_json;
-use serde::{Serialize, Deserialize};
 
 /// Conoha API Client
 #[derive(Parser, Debug)]
@@ -9,45 +6,68 @@ use serde::{Serialize, Deserialize};
 struct Args {
     /// API user name
     #[clap(short, long, value_parser)]
-    user_name: String,
-
-    /// Tenant Id
-    #[clap(short, long, value_parser)]
-    tenant_id: String,
+    user_name: Option<String>,
 
     /// Password
     #[clap(short, long, value_parser)]
-    password: String,
+    password: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
-struct Token {
-    id: String
+struct APIToken {
+    value: String
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
-struct Access {
-    token: Token
+struct TenantId {
+    value: String
 }
 
-#[tokio::main]
-async fn main() -> reqwest::Result<()>{
-    //let conoha_api_page = "https://manage.conoha.jp/API/";
-    let args = Args::parse();
-    println!("{}, {}", args.user_name, args.tenant_id);
-    let client = reqwest::Client::new();
+fn main() {
 
-    let send_result = client.post("https://identity.tyo1.conoha.io/v2.0/tokens")
-        .header(reqwest::header::ACCEPT, "application/json")
-        .body(format!("{{ \"auth\": {{ \"passwordCredentials\": {{ \"username\": \"{}\", \"password\": \"{}\" }}, \"tenantId\": \"{}\" }} }}", args.user_name, args.password, args.tenant_id)).send().await?.text().await?;
-    println!("{}", send_result);
-    let access: Access = serde_json::from_str(&send_result).unwrap();
-    loop {
-        let endpoint = gets();
+    // Try to get token from env
+    let key_token = "HAMUSI_TOKEN";
+    // Get tenant-id from env
+    let key_tenant_id = "HAMUSI_TENANT_ID";
+    let tenant_id = std::env::var(key_tenant_id).expect("Please specify HAMUSI_TENANT_ID");
+
+    let token = match std::env::var(key_token) {
+        Ok(val) => val,
+        Err(_err) => {
+            // Try to get token with args (user-name, password, tenant-id)
+            let args = Args::parse();
+            let user_name = args.user_name.expect("Please specify user-name.");
+            let password = args.password.expect("Please specify password.");
+            let client = reqwest::blocking::Client::new();
+            let url_for_get_token = String::from("https://identity.tyo1.conoha.io/v2.0/tokens");
+
+            // Parameters for get token
+            let params = format!("{{ \"auth\": {{ \"passwordCredentials\": {{ \"username\": \"{}\", \"password\": \"{}\" }}, \"tenantId\": \"{}\" }} }}", user_name, password, tenant_id);
+
+            let send_result = client.post(url_for_get_token)
+                .header(reqwest::header::ACCEPT, "application/json")
+                .body(params)
+                .send().unwrap().text().unwrap();
+            println!("{}", send_result);
+            let splited: Vec<&str> = send_result.split('"').collect();
+            splited[15].to_string()
+        }
+
+    };
+    let client_and_token = ClientAndToken {
+        client: reqwest::blocking::Client::new(),
+        token: APIToken { value : token },
+        tenant_id: TenantId { value: tenant_id }
+    };
+
+    match client_and_token.servers() {
+        Some(result) => {
+            println!("{}", result)
+        }
+        None => {
+            println!("None")
+        }
     }
-    Ok(())
+
+    println!("END");
 }
 
 fn gets() -> String {
@@ -57,3 +77,26 @@ fn gets() -> String {
     buf.clone()
 }
 
+struct ClientAndToken {
+    client: reqwest::blocking::Client,
+    token: APIToken,
+    tenant_id: TenantId
+}
+
+impl ClientAndToken {
+    fn servers(&self) -> Option<String> {
+        self.get(format!("https://compute.tyo1.conoha.io/v2/{}/servers", self.tenant_id.value))
+    }
+
+    fn get(&self, url: String) -> Option<String> {
+        let send_result = self.client.get(url)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .header("X-Auth-Token", &(self.token.value))
+            .send().unwrap();
+        if send_result.status().is_success() {
+            Some(send_result.text().unwrap())
+        } else {
+            None
+        }
+    }
+}
