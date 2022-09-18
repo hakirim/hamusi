@@ -2,6 +2,8 @@ use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use donoha::client::APIClient;
 use donoha::client::APIToken;
 use donoha::client::APITokenRequest;
+use donoha::types::Flavor;
+use donoha::types::Image;
 use donoha::types::Server;
 
 const DONOHA_KEY_TENANT_ID: &str = "DONOHA_TENANT_ID";
@@ -99,12 +101,16 @@ fn menu_listing_server(client: &APIClient, tenant_id: &String) {
             }
             println!("{}. {} {} {}", no, server.status, server.id, server.name);
         }
+        println!("c. Create a new server.");
         println!("r. Reload list.");
         println!("0. Quit");
 
         println!("Input [No] of target server.");
 
         let str = gets();
+        if str == "c" {
+            menu_create_server(client, tenant_id);
+        }
         if str == "r" {
             continue;
         }
@@ -168,4 +174,82 @@ fn menu_control_server(client: &APIClient, server: &Server) {
             continue;
         }
     }
+}
+
+fn menu_create_server(client: &APIClient, tenant_id: &String) {
+    loop {
+        // プランを一覧表示する
+        let list_plan = client.flavors(tenant_id.clone()).unwrap();
+        // プランを選択させる
+        for (i, plan) in list_plan.flavors.iter().enumerate() {
+            let no = i + 1;
+            if 0 == i {
+                println!("No,  name");
+            }
+            println!("{}. {}", no, plan.name);
+        }
+        println!("r. Reload list.");
+        println!("0. Cancel");
+
+        println!("Input [No] of target plan.");
+
+        let str = gets();
+        if str == "r" {
+            continue;
+        }
+        if str == "0" {
+            return;
+        }
+        let no: usize = match str.parse() {
+            Ok(n) => n,
+            Err(_) => {
+                continue;
+            }
+        };
+        let plan: &Flavor = match list_plan.flavors.get(no - 1) {
+            Some(s) => s,
+            None => {
+                continue;
+            }
+        };
+
+        // イメージの一覧を表示する
+        let list_images = client.images(tenant_id.clone()).unwrap();
+        // イメージを選択させる
+        for (i, image) in list_images.images.iter().enumerate() {
+            let no = i + 1;
+            if 0 == i {
+                println!("No,  name");
+            }
+            println!("{}. {}", no, plan.name);
+        }
+        println!("r. Reload list.");
+        println!("0. Cancel");
+        println!("Input [No] of target image.");
+        let str = gets();
+        if str == "r" {
+            continue;
+        }
+        if str == "0" {
+            return;
+        }
+        let no: usize = match str.parse() {
+            Ok(n) => n,
+            Err(_) => {
+                continue;
+            }
+        };
+        let image: &Image = match list_images.images.get(no - 1) {
+            Some(s) => s,
+            None => {
+                continue;
+            }
+        };
+
+        create_server(client, plan, image, tenant_id);
+    }
+}
+
+fn create_server(client: &APIClient, flavor: &Flavor, image: &Image, tenant_id: &String) {
+    client.create_server(tenant_id, flavor, image);
 }
