@@ -221,7 +221,7 @@ fn menu_create_server(client: &APIClient, tenant_id: &String) {
             if 0 == i {
                 println!("No,  name");
             }
-            println!("{}. {}", no, plan.name);
+            println!("{}. {}", no, image.name);
         }
         println!("r. Reload list.");
         println!("0. Cancel");
